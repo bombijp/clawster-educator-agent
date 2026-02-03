@@ -23,12 +23,12 @@ class ClawstrAgent:
         # Clawstr settings
         self.default_subclaw = "https://clawstr.com/c/ai"
         
-        # Nostr relays
+        # RECOMMENDED RELAYS FROM CLAWSTR DOCS
         self.relays = [
+            "wss://relay.ditto.pub",
+            "wss://relay.primal.net",
             "wss://relay.damus.io",
-            "wss://relay.nostr.band",
-            "wss://nos.lol",
-            "wss://relay.snort.social"
+            "wss://nos.lol"
         ]
     
     def generate_keys(self):
@@ -62,7 +62,7 @@ class ClawstrAgent:
         try:
             self.client = Client(self.signer)
             
-            print("\n🔌 Adding relays...")
+            print("\n🔌 Adding Clawstr recommended relays...")
             
             for relay_str in self.relays:
                 try:
@@ -86,32 +86,25 @@ class ClawstrAgent:
     async def set_profile(self):
         """Set up the agent's profile with bot: true"""
         try:
-            # Create metadata JSON with bot: true
             metadata_dict = {
                 "name": self.name,
                 "about": self.about,
                 "bot": True
             }
             
-            # Create Metadata object from JSON
             metadata = Metadata.from_json(json.dumps(metadata_dict))
-            
-            # Create metadata event using EventBuilder
             builder = EventBuilder.metadata(metadata)
-            
-            # Sign the event
             event = builder.sign_with_keys(self.keys)
             
             print("\n📤 Setting up profile...")
             
-            # Send to each relay
-            for relay_str in self.relays:
-                try:
-                    relay_url = RelayUrl.parse(relay_str)
-                    await self.client.send_event_to(relay_url, event)
-                    print(f"   ✓ Sent to {relay_str}")
-                except Exception as relay_error:
-                    print(f"   ✗ Failed {relay_str}: {relay_error}")
+            # Send to all relays at once
+            relay_urls = [RelayUrl.parse(r) for r in self.relays]
+            try:
+                await self.client.send_event_to(relay_urls, event)
+                print(f"   ✓ Sent to all relays")
+            except Exception as e:
+                print(f"   ✗ Error: {e}")
             
             print(f"\n✅ Profile set up!")
             print(f"   Name: {self.name}")
@@ -124,11 +117,12 @@ class ClawstrAgent:
             return False
     
     async def post_to_subclaw(self, content, subclaw=None):
-        """Post a message to a Clawstr subclaw"""
+        """Post a message to a Clawstr subclaw using Kind 1111"""
         if subclaw is None:
             subclaw = self.default_subclaw
         
         try:
+            # Create all tags as a list
             tags = [
                 Tag.parse(["I", subclaw]),
                 Tag.parse(["K", "web"]),
@@ -138,24 +132,45 @@ class ClawstrAgent:
                 Tag.parse(["l", "ai", "agent"])
             ]
             
-            builder = EventBuilder.text_note(content).tags(tags)
+            # Create Kind 1111 event with tags
+            builder = EventBuilder(Kind(1111), content).tags(tags)
+            
+            # Sign the event
             event = builder.sign_with_keys(self.keys)
             
-            print("\n📤 Sending to relays...")
+            print("\n📤 Sending Kind 1111 event to Clawstr relays...")
+            print(f"   Event Kind: {event.kind().as_u16()}")
+            print(f"   Subclaw: {subclaw}")
             
-            for relay_str in self.relays:
+            # Create list of relay URLs
+            relay_urls = [RelayUrl.parse(r) for r in self.relays]
+            
+            # Send to all relays at once
+            try:
+                output = await self.client.send_event_to(relay_urls, event)
+                print(f"   ✓ Sent to relays!")
+                print(f"\n✅ Posted to {subclaw}!")
+                print(f"   Event ID: {event.id().to_bech32()}")
+                print(f"   Kind: 1111 (NIP-22 Comment)")
+                print(f"\n🔗 View at: {subclaw}")
+                return event
+            except Exception as send_error:
+                print(f"   ✗ Send error: {send_error}")
+                
+                # Try sending with just send_event instead
+                print("\n   Trying alternative method...")
                 try:
-                    relay_url = RelayUrl.parse(relay_str)
-                    await self.client.send_event_to(relay_url, event)
-                    print(f"   ✓ Sent to {relay_str}")
-                except Exception as relay_error:
-                    print(f"   ✗ Failed {relay_str}: {relay_error}")
-            
-            print(f"\n✅ Posted to {subclaw}!")
-            print(f"   Event ID: {event.id().to_bech32()}")
-            print(f"   Content: {content[:50]}...")
-            print(f"\n🔗 View at: https://clawstr.com/c/ai")
-            return event
+                    output = await self.client.send_event(event)
+                    print(f"   ✓ Sent via send_event!")
+                    print(f"\n✅ Posted to {subclaw}!")
+                    print(f"   Event ID: {event.id().to_bech32()}")
+                    print(f"   Kind: 1111 (NIP-22 Comment)")
+                    print(f"\n🔗 View at: {subclaw}")
+                    return event
+                except Exception as e2:
+                    print(f"   ✗ Alternative also failed: {e2}")
+                    return None
+                    
         except Exception as e:
             print(f"\n❌ Post error: {e}")
             print(f"   Error type: {type(e).__name__}")
@@ -218,10 +233,10 @@ async def main():
         print("1. Generate new Nostr identity")
         print("2. Load existing identity (nsec)")
         print("3. Connect to Nostr relays")
-        print("4. Set up agent profile (FIX NAME)")
-        print("5. Post introduction to Clawstr")
-        print("6. Post about technology")
-        print("7. Custom post to Clawstr")
+        print("4. Set up agent profile")
+        print("5. Post introduction to Clawstr (Kind 1111)")
+        print("6. Post about technology (Kind 1111)")
+        print("7. Custom post to Clawstr (Kind 1111)")
         print("8. View my public key")
         print("9. Exit")
         print()
@@ -275,6 +290,8 @@ async def main():
                 print("  - https://clawstr.com/c/ai")
                 print("  - https://clawstr.com/c/programming")
                 print("  - https://clawstr.com/c/videogames")
+                print("  - https://clawstr.com/c/bitcoin")
+                print("  - https://clawstr.com/c/nostr")
                 subclaw = input("\nSubclaw URL (or press Enter for /c/ai): ").strip()
                 if not subclaw:
                     subclaw = "https://clawstr.com/c/ai"
